@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TERMINAL_CHAT</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div class="crt-overlay"></div>
+
+    <div class="container">
+        <header>
+            <h1>> NET_CHAT_PROTOCOL_V1 <span class="blink">_</span></h1>
+        </header>
+        
+        <div id="login-screen">
+            <div class="input-group">
+                <label>> IDENTITY_USERNAME:</label>
+                <input type="text" id="username" placeholder="Guest_01" autocomplete="off" maxlength="15">
+            </div>
+
+            <div class="tabs">
+                <button id="btn-tab-create" class="active" onclick="switchTab('create')">[ CREATE_NODE ]</button>
+                <button id="btn-tab-join" onclick="switchTab('join')">[ JOIN_NODE ]</button>
+            </div>
+
+            <div id="create-section">
+                <div class="input-group">
+                    <label>> NEW_ROOM_ID:</label>
+                    <input type="text" id="new-room-name" autocomplete="off" maxlength="20">
+                </div>
+                <div class="input-group">
+                    <label>> MAX_CONNECTIONS (2-99):</label>
+                    <input type="number" id="max-users" value="5" min="2" max="99">
+                </div>
+                <button class="action-btn" onclick="createRoom()">> INITIALIZE_ROOM</button>
+            </div>
+
+            <div id="join-section" style="display:none;">
+                <div class="input-group">
+                    <label>> TARGET_ROOM_ID:</label>
+                    <input type="text" id="join-room-name" autocomplete="off">
+                </div>
+                <button class="action-btn" onclick="joinRoom()">> CONNECT_TO_ROOM</button>
+            </div>
+            
+            <div id="error-msg" class="error"></div>
+        </div>
+
+        <div id="chat-screen" style="display:none;">
+            <div class="room-header">
+                <span>CONNECTED @ [<span id="current-room-id">VOID</span>]</span>
+                <button class="btn-leave" onclick="location.reload()">[ ABORT ]</button>
+            </div>
+            
+            <div id="messages" class="messages-area"></div>
+            
+            <form id="chat-form" onsubmit="sendMessage(event)">
+                <span class="prompt">CMD >></span>
+                <input type="text" id="msg-input" autocomplete="off" placeholder="..." autofocus>
+                <button type="submit" style="display:none;">Send</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Kosongkan parameter io() agar otomatis mendeteksi host (Render/Localhost)
+        const socket = io();
+        
+        const loginScreen = document.getElementById('login-screen');
+        const chatScreen = document.getElementById('chat-screen');
+        const errorMsg = document.getElementById('error-msg');
+        const messagesDiv = document.getElementById('messages');
+
+        function switchTab(mode) {
+            document.getElementById('create-section').style.display = mode === 'create' ? 'block' : 'none';
+            document.getElementById('join-section').style.display = mode === 'join' ? 'block' : 'none';
+            document.getElementById('btn-tab-create').classList.toggle('active', mode === 'create');
+            document.getElementById('btn-tab-join').classList.toggle('active', mode === 'join');
+            errorMsg.innerText = '';
+        }
+
+        function createRoom() {
+            const username = document.getElementById('username').value.trim() || 'Anon';
+            const roomName = document.getElementById('new-room-name').value.trim();
+            const maxUsers = document.getElementById('max-users').value;
+
+            if(!roomName) return showError('ROOM_NAME_REQUIRED');
+            socket.emit('create_room', { username, roomName, maxUsers });
+        }
+
+        function joinRoom() {
+            const username = document.getElementById('username').value.trim() || 'Anon';
+            const roomName = document.getElementById('join-room-name').value.trim();
+
+            if(!roomName) return showError('TARGET_ID_REQUIRED');
+            socket.emit('join_room', { username, roomName });
+        }
+
+        function sendMessage(e) {
+            e.preventDefault();
+            const input = document.getElementById('msg-input');
+            const msg = input.value.trim();
+            if(msg) {
+                socket.emit('chat_message', msg);
+                input.value = '';
+            }
+        }
+
+        function showError(msg) {
+            errorMsg.innerText = `*** ${msg} ***`;
+            // Efek kedip error
+            setTimeout(() => errorMsg.innerText = '', 3000);
+        }
+
+        // --- Socket Listeners ---
+        socket.on('notification', (data) => {
+            if(data.type === 'error') showError(data.text);
+        });
+
+        socket.on('room_joined', (data) => {
+            loginScreen.style.display = 'none';
+            chatScreen.style.display = 'flex';
+            document.getElementById('current-room-id').innerText = data.roomName;
+        });
+
+        socket.on('message', (data) => {
+            const div = document.createElement('div');
+            if (data.isSystem) {
+                div.className = 'msg system';
+                div.innerText = `> SYSTEM: ${data.text}`;
+            } else {
+                div.className = 'msg user';
+                div.innerHTML = `<span class="username"><${data.user}></span> ${data.text}`;
+            }
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; 
+        });
+    </script>
+</body>
+</html>

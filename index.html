@@ -3,118 +3,141 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hidden Chat Rooms</title>
-    <style>
-        /* TEMA HACKER TETAP DIPERTAHANKAN */
-        body { background-color: #0d1117; color: #00ff41; font-family: 'Courier New', monospace; margin: 0; display: flex; flex-direction: column; height: 100vh; }
-        
-        /* Layar Login Room */
-        #login-screen { display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100%; }
-        .box { border: 1px solid #333; padding: 20px; background: #161b22; width: 300px; text-align: center; }
-        
-        /* Layar Chat (Awalnya disembunyikan) */
-        #chat-screen { display: none; flex-direction: column; height: 100%; }
-        #chat-container { flex: 1; overflow-y: auto; padding: 20px; border-bottom: 1px solid #333; }
-        #form-container { display: flex; padding: 10px; background: #161b22; }
-        
-        input { background: #000; border: 1px solid #333; color: #00ff41; padding: 10px; outline: none; width: 80%; margin-bottom: 10px; }
-        button { background: #238636; color: white; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #2ea043; }
-        
-        .message { margin-bottom: 5px; }
-        .system-msg { color: #ff5555; font-style: italic; }
-        .my-msg { color: #58a6ff; }
-    </style>
+    <title>TERMI</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <div id="login-screen">
-        <div class="box">
-            <h3>// JOIN SECURE ROOM</h3>
-            <input id="username" placeholder="Codename (e.g. Ghost)" autocomplete="off">
-            <input id="room-name" placeholder="Room ID (e.g. Secret123)" autocomplete="off">
-            <button onclick="joinRoom()">CONNECT</button>
-        </div>
-    </div>
+    <div class="crt-overlay"></div>
 
-    <div id="chat-screen">
-        <div id="chat-header" style="padding:10px; background:#21262d; border-bottom:1px solid #333;">
-            Status: Connected to [<span id="current-room"></span>]
+    <div class="container">
+        <header>
+            <h1>> TERMI-CHAT <span class="blink">_</span></h1>
+        </header>
+        
+        <div id="login-screen">
+            <div class="input-group">
+                <label>> IDENTITY_USERNAME:</label>
+                <input type="text" id="username" placeholder="Guest_01" autocomplete="off" maxlength="15">
+            </div>
+
+            <div class="tabs">
+                <button id="btn-tab-create" class="active" onclick="switchTab('create')">[ CREATE_NODE ]</button>
+                <button id="btn-tab-join" onclick="switchTab('join')">[ JOIN_NODE ]</button>
+            </div>
+
+            <div id="create-section">
+                <div class="input-group">
+                    <label>> NEW_ROOM_ID:</label>
+                    <input type="text" id="new-room-name" autocomplete="off" maxlength="20">
+                </div>
+                <div class="input-group">
+                    <label>> MAX_CONNECTIONS (2-99):</label>
+                    <input type="number" id="max-users" value="5" min="2" max="99">
+                </div>
+                <button class="action-btn" onclick="createRoom()">> INITIALIZE_ROOM</button>
+            </div>
+
+            <div id="join-section" style="display:none;">
+                <div class="input-group">
+                    <label>> TARGET_ROOM_ID:</label>
+                    <input type="text" id="join-room-name" autocomplete="off">
+                </div>
+                <button class="action-btn" onclick="joinRoom()">> CONNECT_TO_ROOM</button>
+            </div>
+            
+            <div id="error-msg" class="error"></div>
         </div>
-        <div id="chat-container"></div>
-        <form id="form-container">
-            <input id="input" autocomplete="off" placeholder="Enter encrypted message..." />
-            <button>SEND</button>
-        </form>
+
+        <div id="chat-screen" style="display:none;">
+            <div class="room-header">
+                <span>CONNECTED @ [<span id="current-room-id">VOID</span>]</span>
+                <button class="btn-leave" onclick="location.reload()">[ ABORT ]</button>
+            </div>
+            
+            <div id="messages" class="messages-area"></div>
+            
+            <form id="chat-form" onsubmit="sendMessage(event)">
+                <span class="prompt">CMD >></span>
+                <input type="text" id="msg-input" autocomplete="off" placeholder="..." autofocus>
+                <button type="submit" style="display:none;">Send</button>
+            </form>
+        </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
+        // Kosongkan parameter io() agar otomatis mendeteksi host (Render/Localhost)
         const socket = io();
         
-        // Variabel untuk menyimpan data user
-        let myUser = '';
-        let myRoom = '';
-
         const loginScreen = document.getElementById('login-screen');
         const chatScreen = document.getElementById('chat-screen');
-        const messages = document.getElementById('chat-container');
-        const form = document.getElementById('form-container');
-        const input = document.getElementById('input');
+        const errorMsg = document.getElementById('error-msg');
+        const messagesDiv = document.getElementById('messages');
 
-        // Fungsi Join Room
+        function switchTab(mode) {
+            document.getElementById('create-section').style.display = mode === 'create' ? 'block' : 'none';
+            document.getElementById('join-section').style.display = mode === 'join' ? 'block' : 'none';
+            document.getElementById('btn-tab-create').classList.toggle('active', mode === 'create');
+            document.getElementById('btn-tab-join').classList.toggle('active', mode === 'join');
+            errorMsg.innerText = '';
+        }
+
+        function createRoom() {
+            const username = document.getElementById('username').value.trim() || 'Anon';
+            const roomName = document.getElementById('new-room-name').value.trim();
+            const maxUsers = document.getElementById('max-users').value;
+
+            if(!roomName) return showError('ROOM_NAME_REQUIRED');
+            socket.emit('create_room', { username, roomName, maxUsers });
+        }
+
         function joinRoom() {
-            const userVal = document.getElementById('username').value;
-            const roomVal = document.getElementById('room-name').value;
+            const username = document.getElementById('username').value.trim() || 'Anon';
+            const roomName = document.getElementById('join-room-name').value.trim();
 
-            if(userVal && roomVal) {
-                myUser = userVal;
-                myRoom = roomVal;
+            if(!roomName) return showError('TARGET_ID_REQUIRED');
+            socket.emit('join_room', { username, roomName });
+        }
 
-                // Kirim sinyal ke server untuk masuk room
-                socket.emit('join_room', myRoom);
-
-                // Ganti tampilan
-                loginScreen.style.display = 'none';
-                chatScreen.style.display = 'flex';
-                document.getElementById('current-room').innerText = myRoom;
-            } else {
-                alert("Username and Room ID required!");
+        function sendMessage(e) {
+            e.preventDefault();
+            const input = document.getElementById('msg-input');
+            const msg = input.value.trim();
+            if(msg) {
+                socket.emit('chat_message', msg);
+                input.value = '';
             }
         }
 
-        // Kirim Pesan
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            if (input.value) {
-                // Kirim pesan + data room ke server
-                socket.emit('chat_message', { 
-                    room: myRoom, 
-                    user: myUser, 
-                    text: input.value 
-                });
-                input.value = '';
+        function showError(msg) {
+            errorMsg.innerText = `*** ${msg} ***`;
+            // Efek kedip error
+            setTimeout(() => errorMsg.innerText = '', 3000);
+        }
+
+        // --- Socket Listeners ---
+        socket.on('notification', (data) => {
+            if(data.type === 'error') showError(data.text);
+        });
+
+        socket.on('room_joined', (data) => {
+            loginScreen.style.display = 'none';
+            chatScreen.style.display = 'flex';
+            document.getElementById('current-room-id').innerText = data.roomName;
+        });
+
+        socket.on('message', (data) => {
+            const div = document.createElement('div');
+            if (data.isSystem) {
+                div.className = 'msg system';
+                div.innerText = `> SYSTEM: ${data.text}`;
+            } else {
+                div.className = 'msg user';
+                div.innerHTML = `<span class="username"><${data.user}></span> ${data.text}`;
             }
-        });
-
-        // Terima Pesan Chat
-        socket.on('chat_message', (msg) => {
-            const item = document.createElement('div');
-            item.className = 'message';
-            // Bedakan warna pesan sendiri vs orang lain
-            const colorClass = (msg.user === myUser) ? 'my-msg' : ''; 
-            
-            item.innerHTML = `<span class="${colorClass}">[${msg.user}]:</span> ${msg.text}`;
-            messages.appendChild(item);
-            window.scrollTo(0, document.body.scrollHeight);
-        });
-
-        // Terima Pesan Sistem (Join/Leave)
-        socket.on('system_message', (msg) => {
-            const item = document.createElement('div');
-            item.className = 'message system-msg';
-            item.innerText = `> SYSTEM: ${msg}`;
-            messages.appendChild(item);
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; 
         });
     </script>
 </body>
